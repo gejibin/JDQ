@@ -14,13 +14,15 @@
 package codec
 
 import (
+	"context"
 	"encoding/binary"
 	"strings"
 	"time"
 
 	"github.com/pingcap/log"
 	"github.com/pingcap/ticdc/cdc/model"
-	"github.com/pingcap/tidb/store/tikv/oracle"
+	"github.com/pingcap/ticdc/pkg/security"
+	"github.com/tikv/client-go/v2/oracle"
 	"go.uber.org/zap"
 )
 
@@ -55,14 +57,13 @@ type EventBatchEncoder interface {
 
 // MQMessage represents an MQ message to the mqSink
 type MQMessage struct {
-	Key       []byte
-	Value     []byte
-	Ts        uint64              // reserved for possible output sorting
-	Schema    *string             // schema
-	Table     *string             // table
-	Type      model.MqMessageType // type
-	Protocol  Protocol            // protocol
-	rowsCount int                 // rows in one MQ Message
+	Key      []byte
+	Value    []byte
+	Ts       uint64              // reserved for possible output sorting
+	Schema   *string             // schema
+	Table    *string             // table
+	Type     model.MqMessageType // type
+	Protocol Protocol            // protocol
 }
 
 // maximumRecordOverhead is used to calculate ProducerMessage's byteSize by sarama kafka client.
@@ -82,21 +83,6 @@ func (m *MQMessage) PhysicalTime() time.Time {
 	return oracle.GetTimeFromTS(m.Ts)
 }
 
-// GetRowsCount returns the number of rows batched in one MQMessage
-func (m *MQMessage) GetRowsCount() int {
-	return m.rowsCount
-}
-
-// SetRowsCount set the number of rows
-func (m *MQMessage) SetRowsCount(cnt int) {
-	m.rowsCount = cnt
-}
-
-// IncRowsCount increase the number of rows
-func (m *MQMessage) IncRowsCount() {
-	m.rowsCount++
-}
-
 func newDDLMQMessage(proto Protocol, key, value []byte, event *model.DDLEvent) *MQMessage {
 	return NewMQMessage(proto, key, value, event.CommitTs, model.MqMessageTypeDDL, &event.TableInfo.Schema, &event.TableInfo.Table)
 }
@@ -109,14 +95,13 @@ func newResolvedMQMessage(proto Protocol, key, value []byte, ts uint64) *MQMessa
 // It copies the input byte slices to avoid any surprises in asynchronous MQ writes.
 func NewMQMessage(proto Protocol, key []byte, value []byte, ts uint64, ty model.MqMessageType, schema, table *string) *MQMessage {
 	ret := &MQMessage{
-		Key:       nil,
-		Value:     nil,
-		Ts:        ts,
-		Schema:    schema,
-		Table:     table,
-		Type:      ty,
-		Protocol:  proto,
-		rowsCount: 0,
+		Key:      nil,
+		Value:    nil,
+		Ts:       ts,
+		Schema:   schema,
+		Table:    table,
+		Type:     ty,
+		Protocol: proto,
 	}
 
 	if key != nil {
@@ -168,6 +153,7 @@ const (
 	ProtocolAvro
 	ProtocolMaxwell
 	ProtocolCanalJSON
+	ProtocolCraft
 	ProtocolJdqAvro
 )
 
@@ -184,6 +170,8 @@ func (p *Protocol) FromString(protocol string) {
 		*p = ProtocolMaxwell
 	case "canal-json":
 		*p = ProtocolCanalJSON
+	case "craft":
+		*p = ProtocolCraft
 	case "jdq-avro":
 		*p = ProtocolJdqAvro
 	default:
@@ -192,23 +180,29 @@ func (p *Protocol) FromString(protocol string) {
 	}
 }
 
-// NewEventBatchEncoder returns a function of creating an EventBatchEncoder by protocol.
-func NewEventBatchEncoder(p Protocol) func() EventBatchEncoder {
+type EncoderBuilder interface {
+	Build(ctx context.Context) (EventBatchEncoder, error)
+}
+
+// NewEventBatchEncoderBuilder returns an EncoderBuilder
+func NewEventBatchEncoderBuilder(p Protocol, credential *security.Credential, opts map[string]string) (EncoderBuilder, error) {
 	switch p {
 	case ProtocolDefault:
-		return NewJSONEventBatchEncoder
+		return newJSONEventBatchEncoderBuilder(opts), nil
 	case ProtocolCanal:
-		return NewCanalEventBatchEncoder
+		return newCanalEventBatchEncoderBuilder(opts), nil
 	case ProtocolAvro:
-		return NewAvroEventBatchEncoder
+		return newAvroEventBatchEncoderBuilder(credential, opts)
 	case ProtocolMaxwell:
-		return NewMaxwellEventBatchEncoder
+		return newMaxwellEventBatchEncoderBuilder(opts), nil
 	case ProtocolCanalJSON:
-		return NewCanalFlatEventBatchEncoder
+		return newCanalFlatEventBatchEncoderBuilder(opts), nil
+	case ProtocolCraft:
+		return newCraftEventBatchEncoderBuilder(opts), nil
 	case ProtocolJdqAvro:
-		return NewJdqEventBatchEncoder
+		return newJdqEventBatchEncoderBuilder(opts), nil
 	default:
-		log.Warn("unknown codec protocol value of EventBatchEncoder", zap.Int("protocol_value", int(p)))
-		return NewJSONEventBatchEncoder
+		log.Warn("unknown codec protocol value of EventBatchEncoder, use open-protocol as the default", zap.Int("protocol_value", int(p)))
+		return newJSONEventBatchEncoderBuilder(opts), nil
 	}
 }

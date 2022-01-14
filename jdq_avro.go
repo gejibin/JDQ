@@ -15,6 +15,7 @@ package codec
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"strconv"
 	"strings"
@@ -61,6 +62,24 @@ const (
 	cusKeyFt  = "ft"
 	cusKeyIP  = "ip"
 )
+
+type jdqEventBatchEncoderBuilder struct {
+	opts map[string]string
+}
+
+// Build a `MaxwellEventBatchEncoder`
+func (b *jdqEventBatchEncoderBuilder) Build(ctx context.Context) (EventBatchEncoder, error) {
+	encoder := NewJdqEventBatchEncoder()
+	if err := encoder.SetParams(b.opts); err != nil {
+		return nil, cerror.WrapError(cerror.ErrKafkaInvalidConfig, err)
+	}
+
+	return encoder, nil
+}
+
+func newJdqEventBatchEncoderBuilder(opts map[string]string) EncoderBuilder {
+	return &jdqEventBatchEncoderBuilder{opts: opts}
+}
 
 // JdqEventBatchEncoder converts the events to binary Jdq data
 type JdqEventBatchEncoder struct {

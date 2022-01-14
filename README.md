@@ -6,4 +6,4 @@ cdc/sink/codec/jdq_avro.go
 
 cdc/sink/codec/jdq_avro_test.go
 
-pkg/config/config.go
+

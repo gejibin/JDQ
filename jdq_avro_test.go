@@ -25,7 +25,7 @@ import (
 	"github.com/pingcap/check"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	model2 "github.com/pingcap/parser/model"
+	model2 "github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/ticdc/cdc/model"
 	"github.com/pingcap/ticdc/cdc/puller"
@@ -291,4 +291,4 @@ func (s *jdqEventBatchEncoderSuite) TestJdqEncode(c *check.C) {
 	log.Info("TestJdqEncode done!")
 }
 
- //func Test(t *testing.T) { check.TestingT(t) }
+ func Test(t *testing.T) { check.TestingT(t) }
